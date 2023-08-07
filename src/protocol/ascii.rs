@@ -78,7 +78,12 @@ impl<C: Read> CappedLineReader<C> {
         to_fill.copy_from_slice(&self.buf[..min]);
         self.consume(min);
         if rest.len() != 0 {
-            self.inner.read_exact(&mut rest[..])?;
+            if let Err(e) = self.inner.read_exact(&mut rest[..]) {
+                if e.kind() == std::io::ErrorKind::WouldBlock {
+                    eprintln!("WARN: timeout partial read_exact: {:02x?}", buf);
+                }
+                return Err(e.into());
+            }
         }
         Ok(())
     }
@@ -102,7 +107,15 @@ impl<C: Read> CappedLineReader<C> {
                 return Err(ClientError::Error(Cow::Borrowed("Ascii protocol response too long")))?;
             }
             let filled = filled.len();
-            let read = self.inner.read(&mut buf[..])?;
+            let read = match self.inner.read(&mut buf[..]) {
+                Ok(n) => n,
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::WouldBlock {
+                        eprintln!("WARN: timeout partial read_line: {:02x?}", &self.buf[..filled]);
+                    }
+                    return Err(e.into());
+                }
+            };
             if read == 0 {
                 return Err(ClientError::Error(Cow::Borrowed("Ascii protocol no line found")))?;
             }
@@ -132,6 +145,7 @@ impl ProtocolTrait for AsciiProtocol<Stream> {
     }
 
     fn version(&mut self) -> Result<String, MemcacheError> {
+        eprintln!("get VERSION");
         self.reader.get_mut().write(b"version\r\n")?;
         self.reader.get_mut().flush()?;
         self.reader.read_line(|response| {
@@ -156,6 +170,7 @@ impl ProtocolTrait for AsciiProtocol<Stream> {
     }
 
     fn get<V: FromMemcacheValueExt>(&mut self, key: &str) -> Result<Option<V>, MemcacheError> {
+        eprintln!("get {}", key);
         write!(self.reader.get_mut(), "get {}\r\n", key)?;
 
         if let Some((k, v)) = self.parse_get_response(false)? {
