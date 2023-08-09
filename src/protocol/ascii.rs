@@ -145,7 +145,6 @@ impl ProtocolTrait for AsciiProtocol<Stream> {
     }
 
     fn version(&mut self) -> Result<String, MemcacheError> {
-        eprintln!("get VERSION");
         self.reader.get_mut().write(b"version\r\n")?;
         self.reader.get_mut().flush()?;
         self.reader.read_line(|response| {
@@ -170,7 +169,6 @@ impl ProtocolTrait for AsciiProtocol<Stream> {
     }
 
     fn get<V: FromMemcacheValueExt>(&mut self, key: &str) -> Result<Option<V>, MemcacheError> {
-        eprintln!("get {}", key);
         write!(self.reader.get_mut(), "get {}\r\n", key)?;
 
         if let Some((k, v)) = self.parse_get_response(false)? {
